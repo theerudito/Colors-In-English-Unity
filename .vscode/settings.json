@@ -56,5 +56,5 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "Colors In English.sln"
+    "dotnet.defaultSolution": "Colors-In-English-Unity.slnx"
 }

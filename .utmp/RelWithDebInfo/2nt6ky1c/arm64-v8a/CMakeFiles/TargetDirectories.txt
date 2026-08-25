@@ -1,0 +1,5 @@
+C:/Users/Usuario/Desktop/Jorge/Flutter/Colors-In-English-Unity/.utmp/RelWithDebInfo/2nt6ky1c/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/Usuario/Desktop/Jorge/Flutter/Colors-In-English-Unity/.utmp/RelWithDebInfo/2nt6ky1c/arm64-v8a/CMakeFiles/rebuild_cache.dir
+C:/Users/Usuario/Desktop/Jorge/Flutter/Colors-In-English-Unity/.utmp/RelWithDebInfo/2nt6ky1c/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
+C:/Users/Usuario/Desktop/Jorge/Flutter/Colors-In-English-Unity/.utmp/RelWithDebInfo/2nt6ky1c/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
+C:/Users/Usuario/Desktop/Jorge/Flutter/Colors-In-English-Unity/.utmp/RelWithDebInfo/2nt6ky1c/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir

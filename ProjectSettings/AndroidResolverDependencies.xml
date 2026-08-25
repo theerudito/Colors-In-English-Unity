@@ -2,7 +2,7 @@
   <packages>
     <package>androidx.constraintlayout:constraintlayout:2.1.4</package>
     <package>com.google.android.gms:play-services-ads:23.2.0</package>
-    <package>com.google.android.ump:user-messaging-platform:2.2.0</package>
+    <package>com.google.android.ump:user-messaging-platform:2.1.0</package>
   </packages>
   <files />
   <settings>

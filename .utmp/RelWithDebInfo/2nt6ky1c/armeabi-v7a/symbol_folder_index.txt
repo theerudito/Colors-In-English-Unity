@@ -1,0 +1,1 @@
+C:\Users\Usuario\Desktop\Jorge\Flutter\Colors-In-English-Unity\Library\Bee\Android\Prj\IL2CPP\Gradle\unityLibrary\build\intermediates\cxx\RelWithDebInfo\2nt6ky1c\obj\armeabi-v7a

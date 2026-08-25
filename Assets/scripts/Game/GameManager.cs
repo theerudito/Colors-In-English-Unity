@@ -1,333 +1,242 @@
-using UnityEngine;
-using TMPro;
 using System;
-using UnityEngine.UI;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Collections;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
 using GoogleMobileAds.Api;
-
 
 public class GameManager : MonoBehaviour
 {
-    private string _developerEN = "MADE BY BETWEEN BYTE SOFTWARE " + "- " + DateTime.Now.Year.ToString();
-    private string _developerES = "HECHO POR BETWEEN BYTE SOFTWARE " + "- " + DateTime.Now.Year.ToString();
-    private string _premium = "premium";
-    private int _score = 0;
-    private int _points = 10;
-    private int _time = 10;
-    private float _updateInterval = 1f;
-    private float _nextUpdateTime;
-    private string _language = "EN";
-    private bool _flagEN = true;
-    private bool _sound = true;
-    private bool _isOpen = false;
+    private const string PREF_PREMIUM = "premium";
+    private const string PREF_SOUND = "Sound";
+    private const string PREF_LANGUAGE = "Language";
+    private const string PREF_SCORE = "Score";
 
-    [Header("AUDIO SOURCE")]
+    [Header("AUDIO")]
     [SerializeField] private AudioSource _audioSource;
+    [SerializeField] private AudioClip[] _soundFiles; // 0: Éxito, 1: Error, 2: Tictac/Alerta, 3: Clic
 
     [Header("LABELS")]
-    [SerializeField] private TextMeshProUGUI[] _labels;
+    [SerializeField] private TextMeshProUGUI[] _labels; 
+    // 0: labelTime, 1: time, 2: labelScore, 3: score, 4: labelPath, 5: textAnswer, 6: labelColor, 7: textFollow, 8: textDeveloper, 9: labelStore
 
-    [Header("BUTTONS GAME")]
+    [Header("BUTTONS & CONTROLS")]
     [SerializeField] private Button[] _buttonsColors;
-
-    [Header("TEXT IN BUTTONS")]
     [SerializeField] private TextMeshProUGUI[] _textInButtons;
+    [SerializeField] private Button _btnAds;
+    [SerializeField] private Button _btnConfigToggle;
+    [SerializeField] private Image _imgAvatarDisplay;
+    [SerializeField] private Image _imgLanguageDisplay;
+    [SerializeField] private Image _imgSoundDisplay;
 
-    [Header("SOUND FILES")]
-    [SerializeField] private AudioClip[] _soundFiles;
-
-    [Header("IMAGES AVATAR")]
+    [Header("SPRITES")]
     [SerializeField] private Sprite[] imgAvatar;
-
-    [Header("IMAGES LANGUAGE")]
     [SerializeField] private Sprite[] imgLanguages;
-
-    [Header("IMAGES PREMIUM")]
     [SerializeField] private Sprite[] imgPremium;
-
-    [Header("IMAGES SOUND")]
     [SerializeField] private Sprite[] imgSound;
 
     [Header("PANELS")]
-    [SerializeField] private GameObject[] _panels;
-
-    [Header("PANEL USER")]
+    [SerializeField] private GameObject _panelConfig;
+    [SerializeField] private GameObject _panelInfo;
     [SerializeField] private GameObject _panelUser;
-    [Header("BUTTONS USER")]
+    [SerializeField] private TextMeshProUGUI _textUserPrompt;
     [SerializeField] private Button[] _buttonsUser;
 
-    void Awake()
+    private int _score = 0;
+    private const int _points = 10;
+    private int _time = 10;
+    private const float _updateInterval = 1f;
+
+    private string _language = "EN";
+    private bool _flagEN = true;
+    private bool _sound = true;
+    private bool _isConfigOpen = false;
+
+    private Coroutine _timerCoroutine;
+    private Coroutine _resetCoroutine;
+
+    private string DeveloperCredit => _language == "EN" 
+        ? $"MADE BY BETWEEN BYTE SOFTWARE - {DateTime.Now.Year}" 
+        : $"HECHO POR BETWEEN BYTE SOFTWARE - {DateTime.Now.Year}";
+
+    private void Awake()
     {
-        _isOpen = false;
+        _isConfigOpen = false;
 
-        InAppManager.Instance.OpenStore();
+        // Auto-asignación segura para evitar UnassignedReferenceException
+        ResolveMissingReferences();
 
-        Button btnAds = GameObject.Find("btnAds").GetComponent<Button>();
+        // Inicialización temprana de anuncios AdMob
+        MobileAds.Initialize(_ => { });
 
-        if (LocalStorage.LoadKey(_premium) == true || InAppManager.Instance.HasPurchasedNonConsumable(_premium) == true)
-        {
-            LocalStorage.SaveData(_premium, _premium);
-            btnAds.GetComponent<Image>().sprite = imgPremium[1];
-            btnAds.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
-        }
-        else
-        {
-
-            btnAds.GetComponent<Image>().sprite = imgPremium[0];
-
-            StartCoroutine(AdsManager());
-
-        }
-
-        #region SOUND
-        if (LocalStorage.LoadKey("Sound") == true)
-        {
-            _sound = LocalStorage.LoadData("Sound") == "ON" ? true : false;
-
-            if (_sound == true)
-            {
-                _audioSource.mute = false;
-                GameObject.Find("imgSound").GetComponent<Image>().sprite = imgSound[1];
-            }
-            else
-            {
-                _audioSource.mute = true;
-                GameObject.Find("imgSound").GetComponent<Image>().sprite = imgSound[0];
-            }
-        }
-        else
-        {
-            _sound = true;
-        }
-        #endregion SOUND
-
-        #region LANGUAGE
-        if (LocalStorage.LoadKey("Language") == true)
-        {
-            _language = LocalStorage.LoadData("Language");
-
-            if (_language == "EN")
-            {
-                GameObject.Find("imgLanguage").GetComponent<Image>().sprite = imgLanguages[1];
-            }
-            else
-            {
-                GameObject.Find("imgLanguage").GetComponent<Image>().sprite = imgLanguages[0];
-            }
-        }
-        else
-        {
-            _language = "EN";
-            GameObject.Find("imgLanguage").GetComponent<Image>().sprite = imgLanguages[0];
-        }
-        #endregion LANGUAGE
-
-        #region  SCORE
-        if (LocalStorage.LoadKey("Score") == true)
-        {
-            _score = int.Parse(LocalStorage.LoadData("Score"));
-            _labels[3].text = _score.ToString();
-        }
-        else
-        {
-            _score = 0;
-            _labels[3].text = _score.ToString();
-        }
-        #endregion SCORE
+        // Cargar ajustes guardados
+        LoadSoundSetting();
+        LoadLanguageSetting();
+        LoadScoreSetting();
+        UpdatePremiumStatus();
     }
 
-    void Start()
+    private void Start()
     {
-        _labels[0] = GameObject.Find("labelTime").GetComponent<TextMeshProUGUI>();
-        _labels[1] = GameObject.Find("time").GetComponent<TextMeshProUGUI>();
-        _labels[2] = GameObject.Find("labelScore").GetComponent<TextMeshProUGUI>();
-        _labels[3] = GameObject.Find("score").GetComponent<TextMeshProUGUI>();
-        _labels[4] = GameObject.Find("labelPath").GetComponent<TextMeshProUGUI>();
-        _labels[5] = GameObject.Find("textAnswer").GetComponent<TextMeshProUGUI>();
-        _labels[6] = GameObject.Find("labelColor").GetComponent<TextMeshProUGUI>();
-        _labels[7] = GameObject.Find("textFollow").GetComponent<TextMeshProUGUI>();
-        _labels[8] = GameObject.Find("textDeveloper").GetComponent<TextMeshProUGUI>();
-        _labels[9] = GameObject.Find("labelStore").GetComponent<TextMeshProUGUI>();
+        UpdateStaticLabels();
 
-        _labels[0].text = _language == "EN" ? "TIME" : "TIEMPO";
-        _labels[2].text = _language == "EN" ? "SCORE" : "PUNTOS";
-        _labels[4].text = _language == "EN" ? "DATABASE: OK" : "BASE DE DATOS: OK";
-        _labels[5].text = _language == "EN" ? "WHAT COLOR IS" : "QUE COLOR ES";
-        _labels[7].text = _language == "EN" ? "FOLLOW US" : "SIGUENOS";
-        _labels[8].text = _language == "EN" ? _developerEN : _developerES;
+        if (_panelUser != null) _panelUser.SetActive(false);
+        if (_panelConfig != null) _panelConfig.SetActive(false);
+        if (_panelInfo != null) _panelInfo.SetActive(false);
 
-
-        _panelUser.SetActive(false);
-
-        _panels.ToList().ForEach(panel => panel.SetActive(false));
-
-        GameObject.Find("imgDefault").GetComponent<Image>().sprite = imgAvatar[0];
-
-        _audioSource = GameObject.Find("Canvas Game").GetComponent<AudioSource>();
-
-        StartCoroutine(CountdownTimer());
+        if (_imgAvatarDisplay != null && imgAvatar != null && imgAvatar.Length > 0)
+        {
+            _imgAvatarDisplay.sprite = imgAvatar[0];
+        }
 
         GenerateColors();
+        RestartTimer();
     }
+
+    private void OnEnable()
+    {
+        InAppManager.OnPurchaseSuccess += HandleSuccessfulPurchase;
+        InAppManager.OnPurchaseError += HandleFailedPurchase;
+    }
+
+    private void OnDisable()
+    {
+        InAppManager.OnPurchaseSuccess -= HandleSuccessfulPurchase;
+        InAppManager.OnPurchaseError -= HandleFailedPurchase;
+    }
+
+    // --- RESOLUCIÓN AUTOMÁTICA DE COMPONENTES ---
+    private void ResolveMissingReferences()
+    {
+        if (_panelInfo == null) _panelInfo = GameObject.Find("panelInfo");
+        if (_panelConfig == null) _panelConfig = GameObject.Find("panelConfig");
+        if (_panelUser == null) _panelUser = GameObject.Find("panelUser");
+
+        if (_btnAds == null)
+        {
+            var go = GameObject.Find("btnAds");
+            if (go != null) _btnAds = go.GetComponent<Button>();
+        }
+
+        if (_btnConfigToggle == null)
+        {
+            var go = GameObject.Find("btnOpen");
+            if (go != null) _btnConfigToggle = go.GetComponent<Button>();
+        }
+
+        if (_imgAvatarDisplay == null)
+        {
+            var go = GameObject.Find("imgDefault");
+            if (go != null) _imgAvatarDisplay = go.GetComponent<Image>();
+        }
+
+        if (_imgLanguageDisplay == null)
+        {
+            var go = GameObject.Find("imgLanguage");
+            if (go != null) _imgLanguageDisplay = go.GetComponent<Image>();
+        }
+
+        if (_audioSource == null)
+        {
+            _audioSource = GetComponent<AudioSource>();
+            if (_audioSource == null)
+            {
+                var canvas = GameObject.Find("Canvas Game");
+                if (canvas != null) _audioSource = canvas.GetComponent<AudioSource>();
+            }
+        }
+    }
+
+    // --- LÓGICA DE JUEGO ---
 
     public void CheckColor(int index)
     {
-        var color = _buttonsColors[index].GetComponentInChildren<TextMeshProUGUI>();
+        if (index < 0 || index >= _buttonsColors.Length) return;
 
-        Image _imageDefault = GameObject.Find("imgDefault").GetComponent<Image>();
+        var selectedButtonText = _textInButtons[index].text;
 
-        if (_labels[6].text == color.text)
+        if (_labels[6].text.Equals(selectedButtonText, StringComparison.OrdinalIgnoreCase))
         {
             _score += _points;
-            LocalStorage.SaveData("Score", _score.ToString());
-            _labels[3].text = _score.ToString();
-            _audioSource.clip = _soundFiles[0];
-            _audioSource.Play();
-            _imageDefault.sprite = imgAvatar[1];
+            SaveScore();
+            PlaySound(_soundFiles[0]);
+            if (_imgAvatarDisplay != null && imgAvatar.Length > 1) _imgAvatarDisplay.sprite = imgAvatar[1];
 
-            StartCoroutine(CountdownTimer());
-            StartCoroutine(ResetData());
+            if (_resetCoroutine != null) StopCoroutine(_resetCoroutine);
+            _resetCoroutine = StartCoroutine(ResetDataRoutine());
         }
         else
         {
-            if (_score == 0)
-                _score = 10;
-            else
-                _score -= _points;
-            LocalStorage.SaveData("Score", _score.ToString());
-            _labels[3].text = _score.ToString();
-            _audioSource.clip = _soundFiles[1];
-            _audioSource.Play();
-            _imageDefault.sprite = imgAvatar[2];
+            _score = Mathf.Max(0, _score - _points);
+            SaveScore();
+            PlaySound(_soundFiles[1]);
+            if (_imgAvatarDisplay != null && imgAvatar.Length > 2) _imgAvatarDisplay.sprite = imgAvatar[2];
+
             _buttonsColors[index].interactable = false;
-            _buttonsColors[index].GetComponentInChildren<TextMeshProUGUI>().color = Color.white;
+            _textInButtons[index].color = Color.white;
         }
     }
 
     private void GenerateColors()
     {
-        if (_language == "EN")
+        var sourceList = _language == "EN" ? Colors.newColorEN.ToList() : Colors.newColorES.ToList();
+        if (sourceList.Count == 0) return;
+
+        var random = new System.Random();
+        var targetColor = sourceList[random.Next(0, sourceList.Count)];
+
+        List<int> colorIndices = new List<int> { 1, 2, 3, 4, 5, targetColor.IdColor };
+        colorIndices = colorIndices.OrderBy(_ => random.Next()).Take(_buttonsColors.Length).ToList();
+
+        _labels[6].text = targetColor.Name;
+        _labels[6].fontSize = targetColor.Name.Length < 7 ? 60 : (targetColor.Name.Length < 10 ? 50 : 40);
+
+        for (int i = 0; i < _buttonsColors.Length; i++)
         {
-            var colorsEN = Colors.newColorEN.ToList();
+            int lookupId = colorIndices[i];
+            var matchedColor = sourceList.FirstOrDefault(x => x.IdColor == lookupId) ?? targetColor;
 
-            var colorRamdom = new System.Random().Next(1, colorsEN.Count);
-
-            var selectColor = colorsEN.Where(x => x.IdColor == colorRamdom).FirstOrDefault();
-
-            List<int> MyIndex = new List<int> { 1, 2, 3, 4, 5, selectColor.IdColor };
-
-            MyIndex = MyIndex.OrderBy(x => new System.Random().Next()).ToList();
-
-            _labels[6].text = selectColor.Name;
-
-
-            if (selectColor.Name.Length < 7)
-            {
-                _labels[6].fontSize = 60;
-            }
-            else if (selectColor.Name.Length < 10)
-            {
-                _labels[6].fontSize = 50;
-            }
-            else
-            {
-                _labels[6].fontSize = 40;
-            }
-
-
-            _flagEN = false;
-
-            for (int i = 0; i < _buttonsColors.Length; i++)
-            {
-                _buttonsColors[i].GetComponent<Image>().color = GetColor(colorsEN.Where(x => x.IdColor == MyIndex[i]).FirstOrDefault().Hex);
-                _textInButtons[i].text = colorsEN.Where(x => x.IdColor == MyIndex[i]).FirstOrDefault().Name;
-                _textInButtons[i].color = Color.white;
-                _textInButtons[i].color = new Color(0, 0, 0, 0);
-            }
-        }
-        else
-        {
-            var colorsES = Colors.newColorES.ToList();
-
-            var colorRamdom = new System.Random().Next(1, colorsES.Count);
-
-            var selectColor = colorsES.Where(x => x.IdColor == colorRamdom).FirstOrDefault();
-
-            List<int> MyIndex = new List<int> { 1, 2, 3, 4, 5, selectColor.IdColor };
-
-            MyIndex = MyIndex.OrderBy(x => new System.Random().Next()).ToList();
-
-            _labels[6].text = selectColor.Name;
-
-            if (selectColor.Name.Length < 7)
-            {
-                _labels[6].fontSize = 60;
-            }
-            else if (selectColor.Name.Length < 10)
-            {
-                _labels[6].fontSize = 50;
-            }
-            else
-            {
-                _labels[6].fontSize = 40;
-            }
-
-            _flagEN = true;
-
-            for (int i = 0; i < _buttonsColors.Length; i++)
-            {
-                _buttonsColors[i].GetComponent<Image>().color = GetColor(colorsES.Where(x => x.IdColor == MyIndex[i]).FirstOrDefault().Hex);
-                _textInButtons[i].text = colorsES.Where(x => x.IdColor == MyIndex[i]).FirstOrDefault().Name;
-                _textInButtons[i].color = new Color(0, 0, 0, 0);
-            }
+            _buttonsColors[i].GetComponent<Image>().color = ParseHexColor(matchedColor.Hex);
+            _textInButtons[i].text = matchedColor.Name;
+            _textInButtons[i].color = new Color(0, 0, 0, 0);
+            _buttonsColors[i].interactable = true;
         }
     }
 
-    private Color GetColor(string hex)
+    private IEnumerator ResetDataRoutine()
     {
-        Color color = new Color();
-        UnityEngine.ColorUtility.TryParseHtmlString(hex, out color);
-        return color;
-    }
-
-    private IEnumerator ResetData()
-    {
-        _buttonsColors.ToList().ForEach(btn => btn.interactable = false);
-        _buttonsColors.ToList().ForEach(btn => btn.GetComponentInChildren<TextMeshProUGUI>().color = Color.black);
+        foreach (var btn in _buttonsColors) btn.interactable = false;
+        foreach (var txt in _textInButtons) txt.color = Color.black;
 
         yield return new WaitForSeconds(1f);
 
-        _buttonsColors.ToList().ForEach(btn => btn.interactable = true);
-        _buttonsColors.ToList().ForEach(btn => btn.GetComponentInChildren<TextMeshProUGUI>().color = new Color(0, 0, 0, 0));
-
         GenerateColors();
-
         _labels[1].color = Color.white;
+        if (_imgAvatarDisplay != null && imgAvatar.Length > 0) _imgAvatarDisplay.sprite = imgAvatar[0];
 
-        _time = 10;
-
-        _labels[1].text = _time.ToString();
-
-        _audioSource.clip = _soundFiles[2];
-
-        _audioSource.Stop();
-
-        GameObject.Find("imgDefault").GetComponent<Image>().sprite = imgAvatar[0];
-
-        StartCoroutine(CountdownTimer());
+        RestartTimer();
     }
 
-    private IEnumerator CountdownTimer()
+    private void RestartTimer()
     {
-        _nextUpdateTime = Time.time + _updateInterval;
+        if (_timerCoroutine != null) StopCoroutine(_timerCoroutine);
+        _time = 10;
+        _labels[1].text = _time.ToString();
+        _labels[1].color = Color.white;
+        _timerCoroutine = StartCoroutine(CountdownRoutine());
+    }
+
+    private IEnumerator CountdownRoutine()
+    {
+        float nextTick = Time.time + _updateInterval;
 
         while (_time > 0)
         {
             yield return null;
 
-            if (Time.time >= _nextUpdateTime)
+            if (Time.time >= nextTick)
             {
                 _time--;
                 _labels[1].text = _time.ToString();
@@ -335,248 +244,256 @@ public class GameManager : MonoBehaviour
                 if (_time == 5)
                 {
                     _labels[1].color = Color.red;
-                    _audioSource.clip = _soundFiles[2];
-                    _audioSource.Play();
+                    PlaySound(_soundFiles[2]);
                 }
-                _nextUpdateTime += _updateInterval;
+                nextTick += _updateInterval;
             }
         }
-        StartCoroutine(ResetData());
+
+        if (_resetCoroutine != null) StopCoroutine(_resetCoroutine);
+        _resetCoroutine = StartCoroutine(ResetDataRoutine());
     }
 
-    public void LauncherURL(string url) => Application.OpenURL(url);
+    // --- IAP & PREMIUM ---
 
-    public void ChangeLanguage()
+    public void BuyPremium()
     {
-        ClickSound();
+        PlayClick();
 
-        Image _imgLanguage = GameObject.Find("imgLanguage").GetComponent<Image>();
-
-        if (_flagEN == true)
+        if (InAppManager.Instance != null && InAppManager.Instance.HasPurchasedNonConsumable(PREF_PREMIUM))
         {
-            _flagEN = false;
-            _language = "EN";
-            _labels[0].text = "TIME";
-            _labels[2].text = "SCORE";
-            _labels[4].text = "DATABASE: OK";
-            _labels[5].text = "WHAT COLOR IS";
-            _labels[7].text = "FOLLOW US";
-            _labels[8].text = _developerEN;
-            _imgLanguage.sprite = imgLanguages[1];
-            LocalStorage.SaveData("Language", _language);
-            GenerateColors();
+            OpenPanel("panelInfo");
+            if (_labels.Length > 9) _labels[9].text = _language == "EN" ? "YOU ARE ALREADY PREMIUM" : "YA ERES PREMIUM";
+            SetPremiumVisuals(true);
+            return;
+        }
+
+        if (InAppManager.Instance != null)
+        {
+            InAppManager.Instance.BuyNonConsumable(PREF_PREMIUM);
+        }
+    }
+
+    private void HandleSuccessfulPurchase(string productId)
+    {
+        if (productId != PREF_PREMIUM) return;
+
+        LocalStorage.SaveData(PREF_PREMIUM, PREF_PREMIUM);
+        SetPremiumVisuals(true);
+        OpenPanel("panelInfo");
+        if (_labels.Length > 9) _labels[9].text = _language == "EN" ? "THANKS FOR YOUR PURCHASE" : "GRACIAS POR TU COMPRA";
+    }
+
+    private void HandleFailedPurchase(string productId)
+    {
+        OpenPanel("panelInfo");
+        if (_labels.Length > 9) _labels[9].text = _language == "EN" ? "PURCHASE FAILED" : "COMPRA FALLIDA";
+    }
+
+    private void UpdatePremiumStatus()
+    {
+        bool isPremium = LocalStorage.LoadKey(PREF_PREMIUM) || (InAppManager.Instance != null && InAppManager.Instance.HasPurchasedNonConsumable(PREF_PREMIUM));
+        SetPremiumVisuals(isPremium);
+
+        if (!isPremium)
+        {
+            StartCoroutine(PromptAdsRoutine());
+        }
+    }
+
+    private void SetPremiumVisuals(bool isPremium)
+    {
+        if (_btnAds == null) return;
+
+        if (isPremium)
+        {
+            LocalStorage.SaveData(PREF_PREMIUM, PREF_PREMIUM);
+            if (imgPremium != null && imgPremium.Length > 1) _btnAds.GetComponent<Image>().sprite = imgPremium[1];
+            _btnAds.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
         }
         else
         {
-            _flagEN = true;
-            _language = "ES";
-            _labels[0].text = "TIEMPO";
-            _labels[2].text = "PUNTOS";
-            _labels[4].text = "BASE DE DATOS: OK";
-            _labels[5].text = "QUE COLOR ES";
-            _labels[7].text = "SIGUENOS";
-            _labels[8].text = _developerES;
-            _imgLanguage.sprite = imgLanguages[0];
-            LocalStorage.SaveData("Language", _language);
-            GenerateColors();
+            if (imgPremium != null && imgPremium.Length > 0) _btnAds.GetComponent<Image>().sprite = imgPremium[0];
+        }
+    }
+
+    // --- ADS ---
+
+    private IEnumerator PromptAdsRoutine()
+    {
+        yield return new WaitForSeconds(10f);
+
+        if (LocalStorage.LoadKey(PREF_PREMIUM)) yield break;
+
+        if (_textUserPrompt != null)
+            _textUserPrompt.text = _language == "EN" ? "Would you like to watch a video?" : "¿Deseas ver un video?";
+
+        if (_buttonsUser != null && _buttonsUser.Length >= 2)
+        {
+            _buttonsUser[0].GetComponentInChildren<TMP_Text>().text = _language == "EN" ? "YES" : "SI";
+            _buttonsUser[1].GetComponentInChildren<TMP_Text>().text = "NO";
         }
 
+        if (_panelUser != null) _panelUser.SetActive(true);
+    }
+
+    public void ShowAds(bool userConsent)
+    {
+        PlayClick();
+        if (_panelUser != null) _panelUser.SetActive(false);
+
+        if (userConsent)
+        {
+            AdsBanner.Instance?.LoadAdsBanner();
+            AdsRewarded.Instance?.LoadAdsRewarded();
+        }
+    }
+
+    // --- IDIOMA Y CONFIGURACIÓN ---
+
+    public void ChangeLanguage()
+    {
+        PlayClick();
+        _flagEN = !_flagEN;
+        _language = _flagEN ? "EN" : "ES";
+
+        LocalStorage.SaveData(PREF_LANGUAGE, _language);
+        if (_imgLanguageDisplay != null && imgLanguages != null && imgLanguages.Length > 1)
+        {
+            _imgLanguageDisplay.sprite = _flagEN ? imgLanguages[1] : imgLanguages[0];
+        }
+
+        UpdateStaticLabels();
+        GenerateColors();
         ClosePanel("panelConfig");
     }
 
     public void ChangeSound()
     {
-        Image _imgSound = _panels.FirstOrDefault(panel => panel.name == "panelConfig").transform.Find("imgSound").GetComponent<Image>();
-        ClickSound();
-        if (_sound)
+        PlayClick();
+        _sound = !_sound;
+        if (_audioSource != null) _audioSource.mute = !_sound;
+
+        LocalStorage.SaveData(PREF_SOUND, _sound ? "ON" : "OFF");
+        if (_imgSoundDisplay != null && imgSound != null && imgSound.Length > 1)
         {
-            _audioSource.mute = true;
-            _imgSound.sprite = imgSound[0];
-            LocalStorage.SaveData("Sound", "OFF");
-            _sound = false;
-            ClosePanel("panelConfig");
+            _imgSoundDisplay.sprite = _sound ? imgSound[1] : imgSound[0];
         }
-        else
-        {
-            _audioSource.mute = false;
-            _imgSound.sprite = imgSound[1];
-            LocalStorage.SaveData("Sound", "ON");
-            _sound = true;
-            ClosePanel("panelConfig");
-        }
+
+        ClosePanel("panelConfig");
     }
 
-    public void BuyPremium()
+    private void UpdateStaticLabels()
     {
+        if (_labels == null || _labels.Length < 9) return;
 
-        ClickSound();
+        _labels[0].text = _language == "EN" ? "TIME" : "TIEMPO";
+        _labels[2].text = _language == "EN" ? "SCORE" : "PUNTOS";
+        _labels[4].text = _language == "EN" ? "DATABASE: OK" : "BASE DE DATOS: OK";
+        _labels[5].text = _language == "EN" ? "WHAT COLOR IS" : "QUE COLOR ES";
+        _labels[7].text = _language == "EN" ? "FOLLOW US" : "SIGUENOS";
+        _labels[8].text = DeveloperCredit;
+    }
 
-        Button btnAds = GameObject.Find("btnAds").GetComponent<Button>();
-
-        if (InAppManager.Instance.HasPurchasedNonConsumable(_premium) == true)
+    private void LoadSoundSetting()
+    {
+        _sound = !LocalStorage.LoadKey(PREF_SOUND) || LocalStorage.LoadData(PREF_SOUND) == "ON";
+        if (_audioSource != null) _audioSource.mute = !_sound;
+        if (_imgSoundDisplay != null && imgSound != null && imgSound.Length > 1)
         {
-            OpenPanel("panelInfo");
-            _labels[9].text = _language == "EN" ? "YOU ARE ALREADY PREMIUM" : "YA ERES PREMIUM";
-            LocalStorage.SaveData(_premium, _premium);
-            btnAds.GetComponent<Image>().sprite = imgPremium[1];
-            btnAds.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
-            return;
-        }
-        else
-        {
-            InAppManager.OnPurchaseSuccess += HandleSuccessfulPurchase;
-            InAppManager.OnPurchaseError += HandleFailedPurchase;
-
-            InAppManager.Instance.BuyNonConsumable(_premium);
+            _imgSoundDisplay.sprite = _sound ? imgSound[1] : imgSound[0];
         }
     }
 
-    void HandleSuccessfulPurchase(string productId)
+    private void LoadLanguageSetting()
     {
-        Button btnAds = GameObject.Find("btnAds").GetComponent<Button>();
-        Debug.Log("Compra exitosa para el producto con ID: " + productId);
-        InAppManager.Instance.SetPurchaseMessage(_language == "EN" ? "THANKS FOR YOUR PURCHASE" : "GRACIAS POR TU COMPRA");
-        OpenPanel("panelInfo");
-        _labels[9].text = InAppManager.Instance.GetPurchaseMessage();
-        btnAds.GetComponent<Image>().sprite = imgPremium[1];
-        btnAds.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
-        LocalStorage.SaveData(_premium, _premium);
-        OnDisable();
+        _language = LocalStorage.LoadKey(PREF_LANGUAGE) ? LocalStorage.LoadData(PREF_LANGUAGE) : "EN";
+        _flagEN = _language == "EN";
+        if (_imgLanguageDisplay != null && imgLanguages != null && imgLanguages.Length > 1)
+        {
+            _imgLanguageDisplay.sprite = _flagEN ? imgLanguages[1] : imgLanguages[0];
+        }
     }
 
-    void HandleFailedPurchase(string productId)
+    private void LoadScoreSetting()
     {
-        Button btnAds = GameObject.Find("btnAds").GetComponent<Button>();
-        Debug.Log("Compra fallida para el producto con ID: " + productId);
-        InAppManager.Instance.SetPurchaseMessage(_language == "EN" ? "PURCHASE FAILED" : "COMPRA FALLIDA");
-        OpenPanel("panelInfo");
-        _labels[9].text = InAppManager.Instance.GetPurchaseMessage();
-        btnAds.GetComponent<Image>().sprite = imgPremium[0];
-        OnDisable();
+        _score = LocalStorage.LoadKey(PREF_SCORE) ? int.Parse(LocalStorage.LoadData(PREF_SCORE)) : 0;
+        if (_labels != null && _labels.Length > 3 && _labels[3] != null)
+        {
+            _labels[3].text = _score.ToString();
+        }
     }
 
-    void OnDisable()
+    private void SaveScore()
     {
-        InAppManager.OnPurchaseSuccess -= HandleSuccessfulPurchase;
-        InAppManager.OnPurchaseError -= HandleFailedPurchase;
+        LocalStorage.SaveData(PREF_SCORE, _score.ToString());
+        if (_labels != null && _labels.Length > 3 && _labels[3] != null)
+        {
+            _labels[3].text = _score.ToString();
+        }
     }
+
+    // --- PANELES Y NAVEGACIÓN UI ---
 
     public void OpenPanel(string panelName)
     {
-        if (panelName == "panelConfig")
+        if (panelName == "panelConfig" && _panelConfig != null)
         {
-            if (_isOpen == false)
-            {
-                _panels.FirstOrDefault(panel => panel.name == panelName).SetActive(true);
-                RotateButton(true);
-                ClickSound();
-                _isOpen = true;
-            }
-            else
-            {
-                _panels.FirstOrDefault(panel => panel.name == panelName).SetActive(false);
-                ClickSound();
-                RotateButton(false);
-                _isOpen = false;
-            }
-
+            _isConfigOpen = !_isConfigOpen;
+            _panelConfig.SetActive(_isConfigOpen);
+            RotateConfigButton(_isConfigOpen);
+            PlayClick();
         }
-        if (panelName == "panelInfo")
+        else if (panelName == "panelInfo" && _panelInfo != null)
         {
-            _panels.FirstOrDefault(panel => panel.name == panelName).SetActive(true);
+            _panelInfo.SetActive(true);
         }
     }
 
     public void ClosePanel(string panelName)
     {
-
-        if (panelName == "panelConfig")
+        PlayClick();
+        if (panelName == "panelConfig" && _panelConfig != null)
         {
-            _isOpen = false;
-            _panels.FirstOrDefault(panel => panel.name == panelName).SetActive(false);
-            RotateButton(false);
-            ClickSound();
+            _isConfigOpen = false;
+            _panelConfig.SetActive(false);
+            RotateConfigButton(false);
         }
-        if (panelName == "panelInfo")
+        else if (panelName == "panelInfo" && _panelInfo != null)
         {
-            _panels.FirstOrDefault(panel => panel.name == panelName).SetActive(false);
-            ClickSound();
+            _panelInfo.SetActive(false);
         }
     }
 
-    private void ClickSound()
+    private void RotateConfigButton(bool active)
     {
-        _audioSource.clip = _soundFiles[3];
-        _audioSource.volume = 0.5f;
-        _audioSource.Play();
+        if (_btnConfigToggle != null)
+        {
+            _btnConfigToggle.transform.localRotation = Quaternion.Euler(0, 0, active ? -40f : 0f);
+        }
     }
 
-    private void RotateButton(bool isRotate)
+    private void PlaySound(AudioClip clip)
     {
-        if (isRotate == true)
+        if (_sound && clip != null && _audioSource != null)
         {
-            Button btnConfig = GameObject.Find("btnOpen").GetComponent<Button>();
-            btnConfig.transform.Rotate(0, 0, -40);
-        }
-        else
-        {
-            Button btnConfig = GameObject.Find("btnOpen").GetComponent<Button>();
-            btnConfig.transform.Rotate(0, 0, 40);
+            _audioSource.clip = clip;
+            _audioSource.Play();
         }
     }
 
-
-
-    private IEnumerator AdsManager()
+    private void PlayClick()
     {
-        yield return new WaitForSeconds(10f);
-
-        if (_language == "EN")
+        if (_sound && _audioSource != null && _soundFiles != null && _soundFiles.Length > 3 && _soundFiles[3] != null)
         {
-
-            var info = _panelUser.GetComponentInChildren<Image>().GetComponentInChildren<Image>().GetComponentInChildren<TextMeshProUGUI>();
-
-            var btn1 = _buttonsUser[0].GetComponentInChildren<TMP_Text>();
-            var btn2 = _buttonsUser[1].GetComponentInChildren<TMP_Text>();
-
-            info.text = "Would you like to watch a video";
-            btn1.text = "YES";
-            btn2.text = "NO";
+            _audioSource.PlayOneShot(_soundFiles[3], 0.5f);
         }
-        else
-        {
-            var info = _panelUser.GetComponentInChildren<Image>().GetComponentInChildren<Image>().GetComponentInChildren<TextMeshProUGUI>();
-
-            var btn1 = _buttonsUser[0].GetComponentInChildren<TMP_Text>();
-            var btn2 = _buttonsUser[1].GetComponentInChildren<TMP_Text>();
-
-            info.text = "Deseas ver un video";
-            btn1.text = "SI";
-            btn2.text = "NO";
-
-        }
-        _panelUser.SetActive(true);
     }
 
-    public void ShowAds(bool value)
+    private Color ParseHexColor(string hex)
     {
-        ClickSound();
-
-        if (value == true)
-        {
-            MobileAds.Initialize((InitializationStatus initStatus) =>
-                    {
-                        AdsBanner.Instance.LoadAdsBanner();
-                        //AdsIntersticial.Instance.LoadAdsIntersticial();
-                        AdsRewarded.Instance.LoadAdsRewarded();
-                    });
-
-            _panelUser.SetActive(false);
-
-        }
-        else
-        {
-            _panelUser.SetActive(false);
-        }
+        return ColorUtility.TryParseHtmlString(hex, out Color parsedColor) ? parsedColor : Color.white;
     }
+
+    public void LauncherURL(string url) => Application.OpenURL(url);
 }
